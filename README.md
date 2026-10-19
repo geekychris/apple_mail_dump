@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Apple Mail Dump logo" width="180">
+</p>
+
 # Apple Mail Export Script
 
 A Python script to export Apple Mail messages as NDJSON (newline-delimited JSON) between specified dates. The script directly queries the Apple Mail SQLite database for efficient data extraction.

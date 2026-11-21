@@ -195,3 +195,7 @@ Progress is reported every 100 messages to stderr.
 ## License
 
 This script is provided as-is for personal use.
+
+## mailbridge: serve Mail and Messages over the LAN
+
+`bridge/` holds a Go service that serves this Mac's Mail (Envelope Index and .emlx) and Messages (chat.db) over a read-only, token-authenticated, certificate-pinned HTTPS API, so other machines can pull the data without copying databases around. See [bridge/README.md](bridge/README.md).

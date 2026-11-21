@@ -2,6 +2,8 @@ package maildb_test
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,8 +20,27 @@ func TestFindEnvelopeIndexPicksNewestVersion(t *testing.T) {
 	if err != nil || p != m.Envelope {
 		t.Fatalf("got %q %v", p, err)
 	}
-	if _, err := maildb.FindEnvelopeIndex(filepath.Join(t.TempDir(), "nope")); err == nil {
-		t.Fatal("expected error for missing root")
+	if _, err := maildb.FindEnvelopeIndex(filepath.Join(t.TempDir(), "nope")); !errors.Is(err, maildb.ErrNotSetUp) {
+		t.Fatalf("missing root: want ErrNotSetUp, got %v", err)
+	}
+}
+
+// The layout found on a Mac where Mail.app was opened once years ago and
+// never set up: only an old V8/MailData directory with no Envelope Index.
+func TestFindEnvelopeIndexMailNeverSetUp(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "Mail")
+	if err := os.MkdirAll(filepath.Join(root, "V8", "MailData"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := maildb.FindEnvelopeIndex(root); !errors.Is(err, maildb.ErrNotSetUp) {
+		t.Fatalf("want ErrNotSetUp, got %v", err)
+	}
+	if os.Getuid() != 0 {
+		os.Chmod(root, 0)
+		defer os.Chmod(root, 0o700)
+		if _, err := maildb.FindEnvelopeIndex(root); errors.Is(err, maildb.ErrNotSetUp) || err == nil {
+			t.Fatalf("unreadable root must not look like 'not set up', got %v", err)
+		}
 	}
 }
 

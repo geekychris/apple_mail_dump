@@ -486,7 +486,7 @@ func clamp(v, lo, hi int64) int64 {
 
 func classify(err error) error {
 	switch {
-	case errors.Is(err, snapshot.ErrNoAccess), errors.Is(err, snapshot.ErrNotFound):
+	case errors.Is(err, snapshot.ErrNoAccess), errors.Is(err, snapshot.ErrNotFound), errors.Is(err, maildb.ErrNotSetUp):
 		return err
 	case errors.Is(err, os.ErrPermission):
 		return snapshot.ErrNoAccess
@@ -504,6 +504,8 @@ func publicErr(err error) string {
 	switch {
 	case errors.Is(err, snapshot.ErrNoAccess):
 		return "no_access: grant Full Disk Access to the mailbridge binary"
+	case errors.Is(err, maildb.ErrNotSetUp):
+		return "mail_not_set_up: Mail.app has no mail database on this Mac (no ~/Library/Mail/V*/MailData/Envelope Index); add an account in Mail.app"
 	case errors.Is(err, snapshot.ErrNotFound):
 		return "not_found"
 	}
@@ -515,6 +517,8 @@ func sourceErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, snapshot.ErrNoAccess):
 		writeErr(w, http.StatusServiceUnavailable, "no_access", "grant Full Disk Access to the mailbridge binary")
+	case errors.Is(err, maildb.ErrNotSetUp):
+		writeErr(w, http.StatusServiceUnavailable, "mail_not_set_up", "Mail.app has no mail database on this Mac")
 	case errors.Is(err, snapshot.ErrNotFound):
 		writeErr(w, http.StatusServiceUnavailable, "not_found", "database not found")
 	default:

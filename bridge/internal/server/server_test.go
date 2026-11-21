@@ -269,8 +269,12 @@ func TestNoAccessIsReportedAsFullDiskAccess(t *testing.T) {
 	e := newEnv(t)
 	e.srv.Mail.Root = t.TempDir() + "/missing"
 	w := e.do(t, "GET", "/v1/mail/messages", lanPeer, token)
-	if w.Code != 503 {
-		t.Fatalf("missing mail root: %d", w.Code)
+	if w.Code != 503 || !strings.Contains(w.Body.String(), "mail_not_set_up") {
+		t.Fatalf("missing mail root: %d %s", w.Code, w.Body)
+	}
+	w = e.do(t, "GET", "/v1/status", lanPeer, token)
+	if !strings.Contains(w.Body.String(), "mail_not_set_up") {
+		t.Fatalf("status should explain Mail is not set up: %s", w.Body)
 	}
 }
 

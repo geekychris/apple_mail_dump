@@ -7,6 +7,7 @@ package maildb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -301,6 +302,11 @@ func mailTime(v sql.NullInt64) *time.Time {
 	return &t
 }
 
+// ErrNotSetUp means the Mail directory is readable but holds no Envelope
+// Index: Mail.app has never been set up with an account on this Mac (or not
+// since an old macOS, e.g. only an empty V8/MailData is left).
+var ErrNotSetUp = errors.New("Mail.app not set up: no V*/MailData/Envelope Index")
+
 // FindEnvelopeIndex returns the newest ~/Library/Mail/V*/MailData/Envelope Index.
 func FindEnvelopeIndex(mailRoot string) (string, error) {
 	vs, err := filepath.Glob(filepath.Join(mailRoot, "V*"))
@@ -308,23 +314,20 @@ func FindEnvelopeIndex(mailRoot string) (string, error) {
 		return "", err
 	}
 	sort.Slice(vs, func(i, j int) bool { return versionNum(vs[i]) > versionNum(vs[j]) })
-	var firstErr error
 	for _, v := range vs {
 		p := filepath.Join(v, "MailData", "Envelope Index")
 		if _, err := os.Stat(p); err == nil {
 			return p, nil
-		} else if firstErr == nil {
-			firstErr = err
-		}
-	}
-	if len(vs) == 0 {
-		// Glob hides EPERM; probe the root so callers can tell "no FDA".
-		if _, err := os.ReadDir(mailRoot); err != nil {
+		} else if errors.Is(err, os.ErrPermission) {
 			return "", err
 		}
-		return "", os.ErrNotExist
 	}
-	return "", firstErr
+	// Glob hides EPERM; probe the root so callers can tell "no FDA" from
+	// "Mail never set up".
+	if _, err := os.ReadDir(mailRoot); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	return "", ErrNotSetUp
 }
 
 func versionNum(p string) int {

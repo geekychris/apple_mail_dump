@@ -73,7 +73,7 @@ ssh you@mac bash /tmp/mailbridge-stage/install.sh /tmp/mailbridge-stage/mailbrid
 certificate, and prints the fingerprint. It writes the launchd user agent
 `~/Library/LaunchAgents/com.geekychris.mailbridge.plist` (RunAtLoad, KeepAlive, log in
 `~/Library/Logs/mailbridge.log`) and starts it. Extra arguments after the binary path are
-passed to `serve`, e.g. `--allow-tailscale`.
+passed to `serve`, e.g. `--allow-tailscale`, `--no-messages` (serve only Mail), or `--snapshot-age 5m` (copy a busy Envelope Index less often).
 
 Then grant **Full Disk Access**:
 
@@ -81,7 +81,7 @@ Then grant **Full Disk Access**:
 2. Press Cmd-Shift-G, paste `~/Applications/MailBridge/mailbridge`, click Open, and switch it on.
 3. Restart the agent: `launchctl kickstart -k gui/$(id -u)/com.geekychris.mailbridge`
 
-Until then `/v1/status` reports `no_access`. If the macOS firewall asks whether `mailbridge`
+Until then `/v1/status` reports `no_access`. If it reports `mail_not_set_up`, the grant works but Mail.app has no mail database on that Mac (no `~/Library/Mail/V*/MailData/Envelope Index`, e.g. Mail was never given an account): run the bridge on the Mac where Mail is used. If the macOS firewall asks whether `mailbridge`
 may accept incoming connections, click Allow.
 
 **Upgrades reset the grant.** The binary is ad-hoc signed, and macOS privacy controls identify

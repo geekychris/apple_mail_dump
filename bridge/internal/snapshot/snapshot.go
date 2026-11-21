@@ -1,8 +1,12 @@
 // Package snapshot keeps a private, consistent copy of a live SQLite database
 // (Mail's Envelope Index, Messages' chat.db) so the bridge never opens the
-// original file through SQLite at all: it only reads the bytes of the main
-// file and its -wal sibling. Mail and Messages are therefore never locked,
-// checkpointed or otherwise modified by the bridge.
+// original file through SQLite at all: it only reads the main file and its
+// -wal sibling. Mail and Messages are therefore never locked, checkpointed or
+// otherwise modified by the bridge.
+//
+// On APFS the copy is a copy-on-write clone (clonefile), which is instant and
+// writes almost nothing even for a multi-GB Envelope Index; elsewhere (another
+// file system, another volume, another OS) it falls back to copying bytes.
 //
 // The copy is refreshed lazily: at most once per MaxAge, and only when the
 // source's size or mtime changed.
@@ -36,6 +40,7 @@ type Snapshot struct {
 	MaxAge time.Duration // minimum time between freshness checks
 
 	mu        sync.Mutex
+	method    string // "clone" or "copy": how the current copy was made
 	db        *sql.DB
 	gen       int
 	checked   time.Time
@@ -86,6 +91,14 @@ func (s *Snapshot) DB() (*sql.DB, error) {
 	return db, nil
 }
 
+// Method says how the current copy was made: "clone" (APFS copy-on-write)
+// or "copy" (bytes). Empty before the first copy.
+func (s *Snapshot) Method() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.method
+}
+
 // RefreshedAt is when the current copy was taken (zero if never).
 func (s *Snapshot) RefreshedAt() time.Time {
 	s.mu.Lock()
@@ -120,7 +133,8 @@ func (s *Snapshot) refresh() (*sql.DB, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := copyPair(s.Source, dst); err != nil {
+		method, err := copyPair(s.Source, dst)
+		if err != nil {
 			lastErr = err
 			if errors.Is(err, ErrNoAccess) || errors.Is(err, ErrNotFound) {
 				return nil, err
@@ -142,6 +156,7 @@ func (s *Snapshot) refresh() (*sql.DB, error) {
 			continue
 		}
 		cleanupOld(s.Dir, filepath.Base(s.Source), dst)
+		s.method = method
 		return db, nil
 	}
 	return nil, fmt.Errorf("snapshot %s: %w", filepath.Base(s.Source), lastErr)
@@ -170,19 +185,52 @@ func openCopy(path string) (*sql.DB, error) {
 	return db, nil
 }
 
-func copyPair(src, dst string) error {
-	for _, suf := range []string{"-wal", "-shm"} {
+// cloner is swapped in tests to simulate a file system without clonefile.
+var cloner = cloneFile
+
+// copyPair copies the main file and, if present, the -wal. It reports
+// "clone" when both were APFS clones and "copy" when any was copied byte by
+// byte.
+func copyPair(src, dst string) (string, error) {
+	for _, suf := range []string{"", "-wal", "-shm"} {
 		_ = os.Remove(dst + suf)
 	}
-	if err := copyFile(src, dst); err != nil {
-		return err
+	method := "clone"
+	m, err := cloneOrCopy(src, dst)
+	if err != nil {
+		return "", err
+	}
+	if m == "copy" {
+		method = "copy"
 	}
 	if _, err := os.Stat(src + "-wal"); err == nil {
-		if err := copyFile(src+"-wal", dst+"-wal"); err != nil && !errors.Is(err, ErrNotFound) {
-			return err
+		m, err := cloneOrCopy(src+"-wal", dst+"-wal")
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return "", err
+		}
+		if m == "copy" {
+			method = "copy"
 		}
 	}
-	return nil
+	return method, nil
+}
+
+// cloneOrCopy clones src to dst, or copies its bytes when cloning fails. A
+// clone keeps src's mode, so it is set to 0600 afterwards like a copy.
+func cloneOrCopy(src, dst string) (string, error) {
+	if err := cloner(src, dst); err == nil {
+		if err := os.Chmod(dst, 0o600); err != nil {
+			return "", err
+		}
+		return "clone", nil
+	} else if errors.Is(classify(err), ErrNoAccess) || errors.Is(classify(err), ErrNotFound) {
+		return "", classify(err)
+	}
+	_ = os.Remove(dst) // a failed clone may leave nothing or a partial entry
+	if err := copyFile(src, dst); err != nil {
+		return "", err
+	}
+	return "copy", nil
 }
 
 func copyFile(src, dst string) error {

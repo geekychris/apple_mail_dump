@@ -14,9 +14,12 @@ granted to exactly that binary and nothing else.
   rebuilt at most every 5 minutes on a miss.
 - **Messages**: `~/Library/Messages/chat.db`, including text that only exists in
   `attributedBody` (decoder adapted from `message_mcp`).
-- The live databases are **never opened by SQLite**. The bridge copies the database file and
+- The live databases are **never opened by SQLite**. The bridge snapshots the database file and
   its `-wal` into a private 0700 snapshot directory, retrying if either changes during the
-  copy, and queries the copy (`query_only`). The copy is re-checked at most once a minute
+  copy, and queries the snapshot (`query_only`). On APFS the snapshot is a copy-on-write clone
+  (`clonefile`), which is instant and writes almost nothing even for a 1.5 GB Envelope Index.
+  On another file system or volume it falls back to copying bytes. `/v1/status` reports which
+  method was used (`snapshot_method`). The copy is re-checked at most once a minute
   (`--snapshot-age`) and refreshed only when the source changed. Mail and Messages are never
   locked or modified.
 - The Envelope Index schema is undocumented and changes between macOS releases. Optional

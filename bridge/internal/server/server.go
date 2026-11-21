@@ -80,6 +80,15 @@ func (m *MailSource) open(ctx context.Context) (*sql.DB, *maildb.Store, error) {
 	return db, m.store, nil
 }
 
+func (m *MailSource) snapshotMethod() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.snap == nil {
+		return ""
+	}
+	return m.snap.Method()
+}
+
 func (m *MailSource) refreshedAt() time.Time {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -253,6 +262,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		} else {
 			mail["ok"], mail["counts"] = true, c
 			mail["snapshot_at"] = s.Mail.refreshedAt().UTC()
+			mail["snapshot_method"] = s.Mail.snapshotMethod()
 			mail["emlx_indexed"] = s.Mail.Emlx.Size()
 		}
 		out["mail"] = mail
@@ -266,6 +276,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		} else {
 			msgs["ok"], msgs["counts"] = true, c
 			msgs["snapshot_at"] = s.Chat.snap.RefreshedAt().UTC()
+			msgs["snapshot_method"] = s.Chat.snap.Method()
 		}
 		out["messages"] = msgs
 	}
